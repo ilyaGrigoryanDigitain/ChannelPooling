@@ -1,4 +1,5 @@
-﻿using RabbitMQ.Client;
+﻿using System.Collections.Concurrent;
+using RabbitMQ.Client;
 
 namespace RabbitChannelPool;
 
@@ -6,11 +7,12 @@ public class ChannelPoolLibrary : IDisposable
 {
     private readonly IConnectionFactory _connectionFactory;
     private readonly string _exchangeName;
-    private readonly int _channelPoolSize;
-    private readonly List<IModel> _channelPool;
-    private object _poolLock = new object();
+    private readonly int _channelPoolMaxSize;
+    private readonly int _channelPoolMinSize;
+    private readonly ConcurrentBag<IModel> _channelPool;
+    private readonly object _poolLock = new();
 
-    public ChannelPoolLibrary(string hostname, string username, string password, string exchangeName, int channelPoolSize)
+    public ChannelPoolLibrary(string hostname, string username, string password, string exchangeName, int channelPoolMaxSize, int channelPoolMinSize)
     {
         _connectionFactory = new ConnectionFactory
         {
@@ -20,8 +22,21 @@ public class ChannelPoolLibrary : IDisposable
         };
 
         _exchangeName = exchangeName;
-        _channelPoolSize = channelPoolSize;
-        _channelPool = new List<IModel>();
+        _channelPoolMaxSize = channelPoolMaxSize;
+        _channelPoolMinSize = channelPoolMinSize;
+        _channelPool = new();
+
+        InitializeChannelPool();
+    }
+    private void InitializeChannelPool()
+    {
+        lock (_poolLock)
+        {
+            for (int i = 0; i < _channelPoolMinSize; i++)
+            {
+                _channelPool.Add(CreateChannel());
+            }
+        }
     }
     private IModel CreateChannel()
     {
@@ -33,29 +48,33 @@ public class ChannelPoolLibrary : IDisposable
 
     public IModel GetChannel()
     {
-        lock (_poolLock)
+        if (_channelPool.TryTake(out var channel))
         {
-            if (_channelPool.Count < _channelPoolSize)
-            {
-                var channel = CreateChannel();
-                _channelPool.Add(channel);
-            }
-
-            var channelToUse = _channelPool[^1];
-            _channelPool.RemoveAt(_channelPool.Count - 1);
-            return channelToUse;
+            return channel;
         }
+
+        // If the pool is empty, create a new channel and return it.
+        return CreateChannel();
     }
 
     public void ReleaseChannel(IModel channel)
     {
-        lock (_poolLock)
+        if (_channelPool.Count < _channelPoolMaxSize)
         {
             _channelPool.Add(channel);
+        }
+        else
+        {
+            channel?.Dispose();
         }
     }
 
     public void Dispose()
     {
+        foreach (var channel in _channelPool)
+        {
+            channel?.Dispose();
+        }
+        _channelPool.Clear();
     }
 }
