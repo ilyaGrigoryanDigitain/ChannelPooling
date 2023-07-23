@@ -48,6 +48,27 @@ public class ChannelPoolLibrary : IDisposable
 
     public IModel GetChannel()
     {
+        IModel item;
+        int i = 0;
+        while (!_channelPool.TryTake(out item))
+        {
+            int count = _channelPool.Count;
+            if (count >= _channelPoolMaxSize)
+            {
+                Task.Delay(TimeSpan.FromMilliseconds(50)).Wait();
+                if (++i < 10)
+                {
+                    continue;
+                }
+
+                throw new TimeoutException($"Unable to put object into the pool.");
+            }
+
+            var newChannel = CreateChannel();
+            _channelPool.Add(newChannel);
+        }
+
+        return item;
         if (_channelPool.TryTake(out var channel))
         {
             return channel;
