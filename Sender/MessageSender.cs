@@ -14,7 +14,7 @@ namespace Sender
 
         public void SendMessage(string message)
         {
-            using var channel = _channelPool.GetChannel();
+            var channel = _channelPool.GetChannel();
             // Step 4: Declare the queue
             channel.QueueDeclare(queue: "my_queue",
                                  durable: false,

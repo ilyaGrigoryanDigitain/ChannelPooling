@@ -13,4 +13,7 @@ using (var channelPool = new ChannelPoolLibrary(hostname, username, password, ex
     // Example 1: Sending messages
     var sender = new MessageSender(channelPool);
     sender.SendMessage("Hello, RabbitMQ!");
+
+    Console.WriteLine("press enter to exit.");
+    Console.ReadLine();
 }
